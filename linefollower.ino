@@ -6,18 +6,20 @@
 #define FarFrontSensor A6               //pin no for one sensor which is 3cm away from front sensor   ///leave sensor
 #define RightSensor A3                  //pin for right sensor
 #define FarRightSensor A4               //pin for right most sensor
-#define Speed 100                       // Max Speed of motor in terms of percentage
-#define MaxDutyCycle (Speed*255)/100    // Corressponding DutyCycle according to Max Speed
-#define LeftMotorPin1 11                //PWM pin for Left motor pin
-#define LeftMotorPin2 12                //pin second for Left motor
+#define Speed 40                       // Max Speed of motor in terms of percentage
+#define MaxDutyCycle (Speed*  255)/100    // Corressponding DutyCycle according to Max Speed
+#define LeftMotorPin1 9                //PWM pin for Left motor pin
+#define LeftMotorPin2 6                //pin second for Left motor
 #define RightMotorPin1 10               //PWM pin for Right motor pin
-#define RightMotorPin2 8                //second Pin for Rigth motor
+#define RightMotorPin2 11                //second Pin for Rigth motor
 #define Threshold 300                   //treshold value for sensor
-#define LearningRate 0.01               // It is for backpropogration 
-#define DelayPerDegree 11.f             //we need to find how much delay is required to turn 1 degree
+#define LearningRate 0.01               // It is for backpropogration
+#define LedNegPin 4
+#define LedPosPin 3
+#define DelayPerDegree 3.25f            //we need to find how much delay is required to turn 1 degree
 char DirectionArray[100];               //an array to store turns for each junction 
 int ArraySize=0;                        //It store the number of direction stored
-/////////////////////////////////////////////////////
+////////////////////////////////////////  /////////////
 //variables to store to sensor array input value;
 ///////////////////////////////////////////////////
 bool FL;
@@ -28,9 +30,9 @@ bool R;
 bool FR;
 //variables for PID algorithm
 //it will be modify using backpropagation
-float Kp=40;                               //constant for proportional (current error)
-float Ki=Kp/4;                             //constant for integral     (Sum of error over time)
-float Kd=Kp;                               //constant for differential (current error -previous error)
+float Kp=25;                               //constant for proportional (current error)
+float Ki=15;                             //constant for integral     (Sum of error over time)
+float Kd=0;                               //constant for differential (current error -previous error)
 float PreviousError=0;                     //a variable to store previous error set to zero
 float Integral=0;                          //a variable to store the sum of all error
 float streeing=0;                          //a variable to store streeing value corresponding to error
@@ -54,10 +56,25 @@ void StoreInput()
 //return 1 if so 
 //else return 0
 ////////////////////////////////////////////////////////////
+char LastDirection;
 bool IsNode()
 {
-  if((FL==1 and L==1 and F==1) or (R==1 and FR==1 and F==1) )//or !(FL+L+FF+R+FR))         //remove comment if final value it is required for u turn
+  LastDirection=' ';
+  if(FL==1)
+  {
+    LastDirection='L';
     return 1;
+  }
+  else if(FR==1)
+  {
+    LastDirection='R';
+    return 1;
+  }
+  else if(!(FL+L+FF+R+FR))         //remove comment if final value it is required for u turn
+  { 
+    LastDirection='U';
+    return 1;
+  }
   else return 0;
 }
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -74,8 +91,14 @@ bool IsNode()
 float CalculateError()
 {
   if(FL+L+F+R+FR)
-    return (float)(6.f*FL+3.f*L+0.f*F-3.f*R-6.f*FR)/(float)(FL+L+F+R+FR);
-  else return 0;
+  {
+    if(FR==1 and FL==0)return -6;
+    else if(FR==0 and FL==1)return 6;
+    else if(L==1 and R==0)return 3;
+    else if(L==0 and R==1)return -3;
+    else return 0;
+  }
+  else return PreviousError;
 }
 /////////////////////////////////////////////////////////////////////////////
 //Backpropogation Algorithm to modify Kp,Kd,Ki to minimize error
@@ -95,8 +118,8 @@ void CalculateStreeing()
 {
   float error=CalculateError();
   Integral+=error;
-  streeing=-(Kp*error+Ki*Integral+Kd*(error-PreviousError));
-  backpropogate();
+  streeing=-(Kp*error);//+Ki*Integral+Kd*(error-PreviousError));
+//  backpropogate();
   PreviousError=error;
   //make sure streeing is in range -100 to 100
   if(streeing<-100)streeing=-100;
@@ -163,21 +186,33 @@ void Turn(int degree)
        
   }
   delay((float)abs(degree)*DelayPerDegree);
+  analogWrite(RightMotorPin1,0);                                  //defining ground pin1 for right motor 
+  analogWrite(LeftMotorPin1,0);                                   //defining ground pin1 for left motor
+  analogWrite(RightMotorPin2,0);                                  //defining ground pin2 for right motor 
+  analogWrite(LeftMotorPin2,0);  
 }
 
 int DryRun=1;
-#define TurningTime 200
+#define TurningTime 3000
 void JunctionDealerInDryRun  ()
 {
-  //for left turn 
-  if(FL==1 and L==1 and F==1) 
-  {       
+  //for left turn
+//  Integral=0;
+//  analogWrite(RightMotorPin2,0);                                  //defining ground pin for right motor 
+//  analogWrite(LeftMotorPin2,0);         
+//  analogWrite(RightMotorPin1,0);                                  //defining ground pin for right motor 
+//  analogWrite(LeftMotorPin1,0);
+//  delay(100);         
+  if(LastDirection=='L') 
+  {
+      GlowLed();
      for(int i=0;i<TurningTime;i++)
      {
-          StoreInput();
+//          StoreInput();
           //considering only left part of junction ,for that turning off sensor value of FR and FF 
-          FF=FR=0;
-          CalulateSteering();
+          FF=R=FR=0;
+          L=FL=1;
+          CalculateStreeing();
           Move();
      }
      DirectionArray[ArraySize++]='L';
@@ -189,27 +224,33 @@ void JunctionDealerInDryRun  ()
           StoreInput();
           //considering only Foeward part of junction ,for that turning off sensor value of FL and FR
           FL=FR=0;
-          CalulateSteering();
+          CalculateStreeing();
           Move();
      }
      DirectionArray[ArraySize++]='F';
     
   }
-  else if(FR==1 and R==1 and F==1) 
+  else if(LastDirection=='R') 
   {
      for(int i=0;i<TurningTime;i++)
      {
-          StoreInput();
+//          StoreInput();
           //considering only right part of junction ,for that turning off sensor value of FL and FF
-          FF=FL=0;                          
-          CalulateSteering();
+          FF=L=FL=0; 
+          R=FR=1;                         
+          CalculateStreeing();
           Move();
      }
      DirectionArray[ArraySize++]='R';
   }
   else if(!(FL+L+FF+R+FR))
   {
-    Turn(180);
+    for(int i=0;i<360;i++)
+    {
+      StoreInput();
+      if(FL+L+F+R+FR)break;
+      Turn(1);
+    }
     DirectionArray[ArraySize++]='U';
   }
 }
@@ -221,10 +262,11 @@ void JunctionDealerInActiveRun ()
    {
      for(int i=0;i<TurningTime;i++)
      {
-          StoreInput();
+//          StoreInput();
           //considering only left part of junction ,for that turning off sensor value of FR and FF 
-          FF=FR=0;
-          CalulateSteering();
+          FF=FR=R=0;
+          L=FL=1;
+          CalculateStreeing();
           Move();
      }
    }
@@ -234,8 +276,8 @@ void JunctionDealerInActiveRun ()
      {
           StoreInput();
           //considering only right part of junction ,for that turning off sensor value of FL and FF
-          FF=FL=0;                          
-          CalulateSteering();
+          FF=FL=L=0;                          
+          CalculateStreeing();
           Move();
      }
    }
@@ -246,7 +288,7 @@ void JunctionDealerInActiveRun ()
           StoreInput();
           //considering only Foeward part of junction ,for that turning off sensor value of FL and FR
           FL=FR=0;
-          CalulateSteering();
+          CalculateStreeing();
           Move();
      }
    }
@@ -275,6 +317,16 @@ void RemoveUTurns()
     DirectionArray[i]=TmpStr[i];
   }
 }
+void GlowLed()
+{
+  digitalWrite(LedNegPin,LOW);
+  digitalWrite(LedPosPin,HIGH);
+}
+void LedOff()
+{
+  digitalWrite(LedNegPin,LOW);
+  digitalWrite(LedPosPin,LOW);
+}
 void setup() {
     Serial.begin(9600);
     pinMode(FarLeftSensor,INPUT);
@@ -287,6 +339,8 @@ void setup() {
     pinMode(LeftMotorPin2,OUTPUT);
     pinMode(RightMotorPin1,OUTPUT);
     pinMode(RightMotorPin2,OUTPUT);
+    pinMode(LedNegPin,OUTPUT);
+    pinMode(LedPosPin,OUTPUT);
 }
 void loop() {
   StoreInput();
@@ -296,6 +350,7 @@ void loop() {
     CalculateStreeing();
     Move();
     DisplayConstants();
+    LedOff();
   }
   else
   {
