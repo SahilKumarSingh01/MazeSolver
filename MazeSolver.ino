@@ -6,7 +6,7 @@
 #define FarFrontSensor A5               //pin no for one sensor which is 3cm away from front sensor   ///leave sensor
 #define RightSensor A3                  //pin for right sensor
 #define FarRightSensor A4               //pin for right most sensor
-#define Speed 30                      // Max Speed of motor in terms of percentage // don't increase it over(50) otherwise change move function else call sahil
+#define Speed 25                      // Max Speed of motor in terms of percentage // don't increase it over(50) otherwise change move function else call sahil
 #define MaxDutyCycle (Speed*  255)/100    // Corressponding DutyCycle according to Max Speed
 #define LeftMotorPin1 11                //PWM pin for Left motor pin
 #define LeftMotorPin2 10                //pin second for Left motor
@@ -32,10 +32,10 @@ int FF;
 int R;
 int FR;
 //variables for PID algorithm
-//it will be modify using backpropagation
-float Kp=2;                               //constant for proportional (current error)
-float Ki=Kp/60;                              //constant for integral     (Sum of error over time)
-float Kd=1.8*Kp;                               //constant for differential (current error -previous error)
+//it will be modify using backpropagation   
+float Kp=5 ;                               //constant for proportional (current error)
+float Ki=Kp/65;                              //constant for integral     (Sum of error over time)
+float Kd=1.25*Kp;                               //constant for differential (current error -previous error)
 float PreviousError=0;                     //a variable to store previous error set to zero
 float Integral=0;                          //a variable to store the sum of all error
 //float streeing=0;                          //a variable to store streeing value corresponding to error
@@ -72,7 +72,7 @@ void StoreInput()
       FL  +=(analogRead(FarLeftSensor)>Threshold)?Active:!Active;
       L   +=(analogRead(LeftSensor)>Threshold)?Active:!Active;
       F   +=(analogRead(FrontSensor)>Threshold)?Active:!Active;
-      FF  +=(analogRead(FarFrontSensor)>Threshold)?Active:!Active;
+      FF  +=(analogRead(FarFrontSensor)>Threshold)?!Active:Active;
       R   +=(analogRead(RightSensor)>Threshold)?Active:!Active;
       FR  +=(analogRead(FarRightSensor)>Threshold)?Active:!Active;
       delay(1);//it is required
@@ -84,6 +84,8 @@ void StoreInput()
   else L=0;
   if(F>n/2)F=1;
   else F=0;
+  if(FF>n/2)FF=1;
+  else FF=0;
   if(R>n/2)R=1;
   else R=0;
   if(FR>n/2)FR=1;
@@ -93,7 +95,7 @@ void UpdateLed()
 {
   digitalWrite(LedFL,FL);
   digitalWrite(LedL,L);
-  digitalWrite(LedF,F);
+  digitalWrite(LedF,FF);
   digitalWrite(LedR,R);
   digitalWrite(LedFR,FR);
 }
@@ -101,7 +103,7 @@ void UpdateLed()
 float CalculateError()
 {
   if(FL+L+F+R+FR)
-      return (float)(6.f*FL+3.f*L+0.f*F-3.f*R-6.f*FR);
+      return (float)(6.f*FL+3.f*L+0.f*F-3.f*R-6.f*FR)/(float)(FR+R+F+L+FL);
   else return PreviousError;
 }
 
@@ -143,57 +145,82 @@ void Move()
   //by default it is zero in case any other function change its value so to ensure that it remain zero
   analogWrite(RightMotorPin2,0);                                  //defining ground pin for right motor 
   analogWrite(LeftMotorPin2,0);                                   //defining ground pin for left motor
-  UpdateLed();
+//  UpdateLed();
 }
 
 void DisplayConstants()
 {
-//  Serial.print(FL);
-//  Serial.print(',');
-//  Serial.print(L);
-//  Serial.print(',');
-//  Serial.print(F);
-//  Serial.print(',');
-//  Serial.print(R);
-//  Serial.print(',');
-//  Serial.print(FR);
-//  Serial.print('\n');
-  Serial.print(analogRead(FarLeftSensor));
+  
+  Serial.print("     ");
+//  Serial.println(analogRead(FarFrontSensor));
+  Serial.println(FF);
+  Serial.print(FL);
   Serial.print(',');
-  Serial.print(analogRead(LeftSensor));
+  Serial.print(L);
   Serial.print(',');
-  Serial.print(analogRead(FrontSensor));
+  Serial.print(F);
   Serial.print(',');
-  Serial.print(analogRead(RightSensor));
+  Serial.print(R);
   Serial.print(',');
-  Serial.print(analogRead(FarRightSensor));
+  Serial.print(FR);
   Serial.print('\n');
+//  delay(500);
+//  Serial.print("     ");
+//  Serial.println(an
+//  Serial.print(analogRead(FarLeftSensor));
+//  Serial.print(',');
+//  Serial.print(analogRead(LeftSensor));
+//  Serial.print(',');
+//  Serial.print(analogRead(FrontSensor));
+//  Serial.print(',');
+//  Serial.print(analogRead(RightSensor));
+//  Serial.print(',');
+//  Serial.print(analogRead(FarRightSensor));
+//  Serial.print('\n');
 }
-void MoveTillJunctionEnd()
+int EndPoint=0;
+bool MoveTillJunctionEnd()
 {
-    while(!(FR==0 && FL==0))
+
+    analogWrite(RightMotorPin1,MaxDutyCycle);             //slowing down right motor to turn right
+    analogWrite(LeftMotorPin1,MaxDutyCycle);   
+    delay(350);
+    StoreInput();
+    if(FL+L+FF+F+R+FL==6)
     {
-      StoreInput();
-      Move();
+      EndPoint=1;
+      analogWrite(RightMotorPin1,0);                                  //defining ground pin1 for right motor 
+      analogWrite(LeftMotorPin1,0);                                   //defining ground pin1 for left motor
+      analogWrite(RightMotorPin2,0);                                  //defining ground pin2 for right motor 
+      analogWrite(LeftMotorPin2,0);
+      return false;
     }
+    analogWrite(RightMotorPin1,0);                                  //defining ground pin1 for right motor 
+    analogWrite(LeftMotorPin1,0);                                   //defining ground pin1 for left motor
+    analogWrite(RightMotorPin2,0);                                  //defining ground pin2 for right motor 
+    analogWrite(LeftMotorPin2,0); 
+    return true;
+    
 }
 
 int DryRun=1;
 
-#define TurningTime 800
+#define TurningTime 300
 void JunctionDealerInDryRun  ()
 {
     analogWrite(RightMotorPin1,0);                                  //defining ground pin1 for right motor 
     analogWrite(LeftMotorPin1,0);                                   //defining ground pin1 for left motor
     analogWrite(RightMotorPin2,0);                                  //defining ground pin2 for right motor 
     analogWrite(LeftMotorPin2,0); 
+    delay(50);
 //    delay(5000);
-    float turningSpeed    =20;
+//    Integral=0;
+    float turningSpeed    =20 ;
     float TurningDutyCycle=turningSpeed*255/100;
-    float reducingFactor  =23;
+    float reducingFactor  =35  ;
     if(FL==1)
     {
-        MoveTillJunctionEnd();
+        if(!MoveTillJunctionEnd())return ;
         analogWrite (LeftMotorPin2,TurningDutyCycle);                   //reversing sense of rotation in left motor to turn left
         analogWrite (RightMotorPin1,TurningDutyCycle);    
         delay(TurningTime);
@@ -207,15 +234,15 @@ void JunctionDealerInDryRun  ()
         }while(!(F));
         DirectionArray[ArraySize++]='L';
     }
-    else if(F==1) 
+    else if(FF==1) 
     {
-       MoveTillJunctionEnd();
+       if(!MoveTillJunctionEnd())return ;
        DirectionArray[ArraySize++]='F';
       
     }
     else if(FR==1) 
     {
-        MoveTillJunctionEnd();
+        if(!MoveTillJunctionEnd())return ;
         analogWrite (LeftMotorPin1,TurningDutyCycle);                   //reversing sense of rotation in left motor to turn left
         analogWrite (RightMotorPin2,TurningDutyCycle);    
         delay(TurningTime);
@@ -233,7 +260,10 @@ void JunctionDealerInDryRun  ()
     else if(!(FL+L+F+R+FR))
     {   
 //        turningSpeed =0.75;
-        reducingFactor=30;
+        if(!MoveTillJunctionEnd())return ;
+        turningSpeed    =25;
+        TurningDutyCycle=turningSpeed*255/100;
+        reducingFactor=31;
         if(PreviousError<=0)
         {//defining ground pin1 for right motor 
             analogWrite (LeftMotorPin1,TurningDutyCycle);                   //reversing sense of rotation in left motor to turn left
@@ -258,7 +288,7 @@ void JunctionDealerInDryRun  ()
                 analogWrite(LeftMotorPin2,TurningDutyCycle-reduct);                                   //defining ground pin1 for left motor
                 analogWrite(RightMotorPin1,TurningDutyCycle-reduct);
                 reduct+=TurningDutyCycle/reducingFactor;
-            }while(!(F));
+            }while(!(F ));
         }
   
     }
@@ -354,17 +384,29 @@ void setup() {
 
 }
 void loop() {
-  StoreInput();
-  UpdateLed();
-  if(!IsNode())
+  if(EndPoint==0)
   {
-    Move();
+      StoreInput();
+      UpdateLed();
+      if(!IsNode())
+      {
+        Move();
+      }
+      else
+      {
+        if(DryRun)JunctionDealerInDryRun();
+        else JunctionDealerInActiveRun();
+        DisplayConstants();
+      }
   }
   else
   {
-    if(DryRun)JunctionDealerInDryRun();
-    else JunctionDealerInActiveRun();
-    DisplayConstants();
+      StoreInput();
+      UpdateLed();
+      delay(500);
+      FL=L=FF=R=FR=0;
+      UpdateLed();
+      
   }
 //    DisplayConstants();
 }
